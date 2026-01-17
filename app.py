@@ -5,10 +5,16 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 import pandas as pd
 import pickle
 
-# Load the trained model
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="Customer Churn Prediction",
+    page_icon="📉",
+    layout="wide"
+)
+
+# ---------------- LOAD MODEL & FILES ----------------
 model = tf.keras.models.load_model('model.h5')
 
-# Load the encoders and scaler
 with open('label_encoder_gender.pkl', 'rb') as file:
     label_encoder_gender = pickle.load(file)
 
@@ -18,23 +24,82 @@ with open('onehot_encoder_geo.pkl', 'rb') as file:
 with open('scaler.pkl', 'rb') as file:
     scaler = pickle.load(file)
 
+# ---------------- HEADER ----------------
+st.markdown(
+    """
+    <h1 style='text-align:center;color:#4CAF50;'>📊 Customer Churn Prediction App</h1>
+    <p style='text-align:center;'>Predict whether a customer is likely to leave the bank</p>
+    """,
+    unsafe_allow_html=True
+)
 
-## streamlit app
-st.title('Customer Churn PRediction')
+st.divider()
 
-# User input
-geography = st.selectbox('Geography', onehot_encoder_geo.categories_[0])
-gender = st.selectbox('Gender', label_encoder_gender.classes_)
-age = st.slider('Age', 18, 92)
-balance = st.number_input('Balance')
-credit_score = st.number_input('Credit Score')
-estimated_salary = st.number_input('Estimated Salary')
-tenure = st.slider('Tenure', 0, 10)
-num_of_products = st.slider('Number of Products', 1, 4)
-has_cr_card = st.selectbox('Has Credit Card', [0, 1])
-is_active_member = st.selectbox('Is Active Member', [0, 1])
+# ---------------- SIDEBAR INPUTS ----------------
+st.sidebar.header("🧾 Customer Details")
 
-# Prepare the input data
+geography = st.sidebar.selectbox(
+    '🌍 Geography', onehot_encoder_geo.categories_[0]
+)
+
+gender = st.sidebar.selectbox(
+    '👤 Gender', label_encoder_gender.classes_
+)
+
+age = st.sidebar.slider('🎂 Age', 18, 92, 30)
+
+tenure = st.sidebar.slider('📆 Tenure (Years)', 0, 10, 3)
+
+num_of_products = st.sidebar.slider(
+    '📦 Number of Products', 1, 4, 1
+)
+
+has_cr_card = st.sidebar.selectbox(
+    '💳 Has Credit Card', ['No', 'Yes']
+)
+
+is_active_member = st.sidebar.selectbox(
+    '⚡ Is Active Member', ['No', 'Yes']
+)
+
+credit_score = st.sidebar.number_input(
+    '🏦 Credit Score', min_value=300, max_value=900, value=650
+)
+
+balance = st.sidebar.number_input(
+    '💰 Account Balance', value=50000.0
+)
+
+estimated_salary = st.sidebar.number_input(
+    '💵 Estimated Salary', value=60000.0
+)
+
+# Convert Yes/No to 0/1
+has_cr_card = 1 if has_cr_card == 'Yes' else 0
+is_active_member = 1 if is_active_member == 'Yes' else 0
+
+# ---------------- MAIN SECTION ----------------
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📌 Customer Summary")
+    st.write(f"**Geography:** {geography}")
+    st.write(f"**Gender:** {gender}")
+    st.write(f"**Age:** {age}")
+    st.write(f"**Tenure:** {tenure} years")
+    st.write(f"**Products:** {num_of_products}")
+
+with col2:
+    st.subheader("📌 Financial Details")
+    st.write(f"**Credit Score:** {credit_score}")
+    st.write(f"**Balance:** ₹ {balance:,.2f}")
+    st.write(f"**Estimated Salary:** ₹ {estimated_salary:,.2f}")
+    st.write(f"**Credit Card:** {'Yes' if has_cr_card else 'No'}")
+    st.write(f"**Active Member:** {'Yes' if is_active_member else 'No'}")
+
+st.divider()
+
+# ---------------- PREPARE INPUT ----------------
 input_data = pd.DataFrame({
     'CreditScore': [credit_score],
     'Gender': [label_encoder_gender.transform([gender])[0]],
@@ -47,24 +112,37 @@ input_data = pd.DataFrame({
     'EstimatedSalary': [estimated_salary]
 })
 
-# One-hot encode 'Geography'
 geo_encoded = onehot_encoder_geo.transform([[geography]]).toarray()
-geo_encoded_df = pd.DataFrame(geo_encoded, columns=onehot_encoder_geo.get_feature_names_out(['Geography']))
+geo_encoded_df = pd.DataFrame(
+    geo_encoded,
+    columns=onehot_encoder_geo.get_feature_names_out(['Geography'])
+)
 
-# Combine one-hot encoded columns with input data
-input_data = pd.concat([input_data.reset_index(drop=True), geo_encoded_df], axis=1)
+input_data = pd.concat(
+    [input_data.reset_index(drop=True), geo_encoded_df],
+    axis=1
+)
 
-# Scale the input data
 input_data_scaled = scaler.transform(input_data)
 
+# ---------------- PREDICTION ----------------
+if st.button("🔍 Predict Churn", use_container_width=True):
+    with st.spinner("Analyzing customer data..."):
+        prediction = model.predict(input_data_scaled)
+        prediction_proba = prediction[0][0]
 
-# Predict churn
-prediction = model.predict(input_data_scaled)
-prediction_proba = prediction[0][0]
+    st.divider()
+    st.subheader("📈 Prediction Result")
 
-st.write(f'Churn Probability: {prediction_proba:.2f}')
+    st.progress(int(prediction_proba * 100))
 
-if prediction_proba > 0.5:
-    st.write('The customer is likely to churn.')
-else:
-    st.write('The customer is not likely to churn.')
+    st.metric(
+        label="Churn Probability",
+        value=f"{prediction_proba:.2%}"
+    )
+
+    if prediction_proba > 0.5:
+        st.error("❌ The customer is **likely to churn**.")
+    else:
+        st.success("✅ The customer is **not likely to churn**.")
+ 
